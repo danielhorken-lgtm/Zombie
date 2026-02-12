@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Zombie Horde: Overdrive</title>
+    <style>
+        body { background: #000; color: #00ff95; font-family: 'Courier New', monospace; margin: 0; overflow: hidden; }
+        #ui { position: fixed; top: 0; width: 100%; display: flex; justify-content: space-around; padding: 15px; background: rgba(0,0,0,0.9); z-index: 10; border-bottom: 2px solid #00ff95; }<!DOCTYPE html>
+<html>
+<head>
+    <title>Zombie Horde: Operator Edition</title>
+    <style>
+        body { background: #000; color: #00ff95; font-family: 'Courier New', monospace; margin: 0; overflow: hidden; }
+        #ui { position: fixed; top: 0; width: 100%; display: flex; justify-content: space-around; padding: 15px; background: rgba(0,0,0,0.9); z-index: 10; border-bottom: 2px solid #00ff95; }
+        #menu, #title-screen, #credits-screen { 
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: #000; padding: 30px; border: 4px solid #00ff95; z-index: 20; text-align: center;
+            min-width: 500px; box-shadow: 0 0 50px #00ff95;
+        }
+        .shop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+        .shop-item { background: #111; padding: 10px; cursor: pointer; border: 1px solid #333; font-size: 11px; }
+        .shop-item:hover { border-color: #00ff95; background: #222; }
+        .btn-main { padding: 15px 30px; background: #00ff95; color: #000; border: none; cursor: pointer; font-weight: bold; margin: 5px; }
+        input { background: #111; border: 1px solid #00ff95; color: #00ff95; padding: 10px; text-align: center; }
+    </style>
+</head>
+<body>
+
+    <audio id="sfx-shoot" src="https://cdn.pixabay.com/audio/2022/03/10/audio_c97805908e.mp3"></audio>
+    <audio id="sfx-damage" src="https://cdn.pixabay.com/audio/2021/08/04/audio_062539f150.mp3"></audio>
+    <audio id="sfx-ability" src="https://cdn.pixabay.com/audio/2022/02/07/audio_64b630325d.mp3"></audio>
+
+    <div id="title-screen">
+        <h1>OPERATOR HORDE</h1>
+        <input type="text" id="username" placeholder="USERNAME" maxlength="12"><br><br>
+        <button class="btn-main" onclick="startGame()">START</button>
+        <button class="btn-main" style="background:none; color:#00ff95; border:1px solid #00ff95;" onclick="showCredits(true)">CREDITS</button>
+    </div>
+
+    <div id="credits-screen" style="display:none;">
+        <h2>CREDITS</h2>
+        <p>Visuals: Neon Grid Platformer</p>
+        <p>SFX: Pixabay Game Assets</p>
+        <p>Operator Concept: Tactical AI</p>
+        <button class="btn-main" onclick="showCredits(false)">BACK</button>
+    </div>
+
+    <div id="ui" style="display:none;">
+        <div>USER: <span id="ui-user">---</span></div>
+        <div>HP: <span id="hp-text" style="color: #ff4d4d;">100</span></div>
+        <div>KP: <span id="kp-text" style="color: gold;">0</span></div>
+        <div>OP: <span id="op-name">RECRUIT</span></div>
+    </div>
+
+    <div id="menu" style="display:none;">
+        <h2>ARMORY</h2>
+        <div class="shop-grid">
+            <div class="shop-item" onclick="buyOp('S1AYER', '#ff4d4d', 200)">S1AYER (Auto-Turret)<br>200 KP</div>
+            <div class="shop-item" onclick="buyOp('VORTEX', '#bf00ff', 300)">VORTEX (Singularity)<br>300 KP</div>
+            <div class="shop-item" onclick="buyOp('BOOST', '#00ff95', 100)">BOOST (Retreat)<br>100 KP</div>
+            <div class="shop-item" onclick="buyWeapon('smg', 150)">SMG (Fast)<br>150 KP</div>
+        </div>
+        <button onclick="togglePause()" class="btn-main">RESUME</button>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+let gameStarted = false, isPaused = false;
+let kp = 0, hp = 100, username = "Player";
+let currentOp = "RECRUIT", opColor = "#00ff95";
+let weapon = "PISTOL", lastShot = 0, fireRate = 450;
+let camX = 0, screenShake = 0;
+
+const player = { x: 500, y: 300, w: 30, h: 50, dx: 0, dy: 0, speed: 6, jump: -16, grounded: false };
+const platforms = [
+    {x: 0, y: 700, w: 5000, h: 200, color: "#00ff95"},
+    {x: 400, y: 550, w: 400, h: 25, color: "#00ffff"},
+    {x: 1000, y: 420, w: 400, h: 25, color: "#ff00ff"}
+];
+
+const zombies = [], bullets = [], fires = [], turret = { active: false, x: 0, y: 0, timer: 0 };
+const keys = {};
+
+function playSound(id) {
+    const s = document.getElementById(id);
+    s.currentTime = 0;
+    s.play();
+}
+
+window.addEventListener("keydown", e => {
+    keys[e.code] = true;
+    if(e.code === 'KeyP' || e.code === 'Escape') togglePause();
+    if(e.code === 'KeyE' && gameStarted) useAbility();
+});
+window.addEventListener("keyup", e => keys[e.code] = false);
+window.addEventListener("mousedown", shoot);
+
+function startGame() {
+    username = document.getElementById("username").value || "Recruit";
+    gameStarted = true;
+    document.getElementById("title-screen").style.display = "none";
+    document.getElementById("ui").style.display = "flex";
+    document.getElementById("ui-user").innerText = username;
+}
+
+function showCredits(s) {
+    document.getElementById("credits-screen").style.display = s ? "block" : "none";
+    document.getElementById("title-screen").style.display = s ? "none" : "block";
+}
+
+function togglePause() {
+    isPaused = !isPaused;
+    document.getElementById("menu").style.display = isPaused ? "block" : "none";
+}
+
+function buyOp(name, color, cost) {
+    if(kp >= cost) { kp -= cost; currentOp = name; opColor = color; }
+}
+function buyWeapon(t, c) { if(kp >= c) { kp -= c; weapon = "SMG"; fireRate = 120; } }
+
+function useAbility() {
+    playSound('sfx-ability');
+    if (currentOp === "S1AYER") {
+        turret.active = true; turret.x = player.x; turret.y = player.y; turret.timer = 500;
+    } else if (currentOp === "VORTEX") {
+        const vx = player.x + 100;
+        zombies.forEach(z => { z.x = vx; z.y = player.y; });
+    } else if (currentOp === "BOOST") {
+        player.x -= 200;
+    }
+}
+
+function shoot(e) {
+    if (isPaused || !gameStarted || Date.now() - lastShot < fireRate) return;
+    lastShot = Date.now();
+    playSound('sfx-shoot');
+    const rect = canvas.getBoundingClientRect();
+    const tx = (e.clientX - rect.left) + camX;
+    const ty = e.clientY - rect.top;
+    const ang = Math.atan2(ty - (player.y + 25), tx - (player.x + 15));
+    bullets.push({ x: player.x+15, y: player.y+25, dx: Math.cos(ang)*18, dy: Math.sin(ang)*18 });
+}
+
+function update() {
+    if (!gameStarted || isPaused) return;
+
+    // Player
+    if (keys['KeyA']) player.dx = -player.speed;
+    else if (keys['KeyD']) player.dx = player.speed;
+    else player.dx *= 0.85;
+    if (keys['KeyW'] && player.grounded) { player.dy = player.jump; player.grounded = false; }
+    player.dy += 0.8; player.x += player.dx; player.y += player.dy;
+
+    player.grounded = false;
+    platforms.forEach(p => {
+        if (player.x < p.x + p.w && player.x + 30 > p.x && player.y + 50 > p.y && player.y + 50 < p.y + p.h && player.dy >= 0) {
+            player.y = p.y - 50; player.dy = 0; player.grounded = true;
+        }
+    });
+
+    // Turret Logic
+    if(turret.active) {
+        turret.timer--;
+        if(turret.timer % 30 === 0 && zombies.length > 0) {
+            const z = zombies[0];
+            const ang = Math.atan2(z.y - turret.y, z.x - turret.x);
+            bullets.push({ x: turret.x+15, y: turret.y+15, dx: Math.cos(ang)*15, dy: Math.sin(ang)*15 });
+        }
+        if(turret.timer <= 0) turret.active = false;
+    }
+
+    // Zombies (Cap 8)
+    while (zombies.length < 8) {
+        zombies.push({ x: player.x + (Math.random()>0.5?700:-700), y: 0, dy: 0, hp: 2, s: 2.2, w:30, h:40 });
+    }
+
+    zombies.forEach((z, zi) => {
+        if (z.x < player.x) z.x += z.s; else z.x -= z.s;
+        z.dy += 0.8; z.y += z.dy;
+        platforms.forEach(p => {
+            if (z.x < p.x + p.w && z.x + 30 > p.x && z.y + 40 > p.y && z.y + 40 < p.y + p.h && z.dy >= 0) {
+                z.y = p.y - 40; z.dy = 0;
+            }
+        });
+
+        if (Math.hypot(player.x - z.x, player.y - z.y) < 30) {
+            hp -= 0.5; screenShake = 8; playSound('sfx-damage');
+            player.dx = (player.x < z.x) ? -8 : 8;
+        }
+
+        bullets.forEach((b, bi) => {
+            if (b.x > z.x && b.x < z.x + 30 && b.y > z.y && b.y < z.y + 40) {
+                z.hp--; fires.push({x: b.x, y: b.y, life: 20});
+                bullets.splice(bi, 1);
+                if (z.hp <= 0) { kp += 10; zombies.splice(zi, 1); }
+            }
+        });
+    });
+
+    fires.forEach((f, i) => { f.life--; if(f.life <= 0) fires.splice(i, 1); });
+    bullets.forEach((b, i) => { b.x += b.dx; b.y += b.dy; if(Math.abs(b.x - player.x) > 1000) bullets.splice(i, 1); });
+    camX = player.x - canvas.width / 2;
+    if(screenShake > 0) screenShake *= 0.9;
+    if(hp <= 0) { hp = 100; player.x = 500; }
+
+    document.getElementById("hp-text").innerText = Math.floor(hp);
+    document.getElementById("kp-text").innerText = kp;
+    document.getElementById("op-name").innerText = currentOp;
+}
+
+function draw() {
+    canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+    ctx.fillStyle = "#000810"; ctx.fillRect(0,0,canvas.width, canvas.height);
+    ctx.save();
+    if(screenShake > 1) ctx.translate(Math.random()*screenShake, Math.random()*screenShake);
+    ctx.translate(-camX, 0);
+
+    platforms.forEach(p => {
+        ctx.fillStyle = "#000"; ctx.fillRect(p.x, p.y, p.w, p.h);
+        ctx.strokeStyle = p.color; ctx.lineWidth = 3; ctx.strokeRect(p.x, p.y, p.w, p.h);
+    });
+
+    if(turret.active) { ctx.fillStyle = "white"; ctx.fillRect(turret.x, turret.y+20, 30, 30); }
+    ctx.fillStyle = opColor; ctx.fillRect(player.x, player.y, 30, 50);
+    zombies.forEach(z => { ctx.fillStyle = "#ff4d4d"; ctx.fillRect(z.x, z.y, 30, 40); });
+    fires.forEach(f => { ctx.fillStyle = "orange"; ctx.fillRect(f.x, f.y, 4, 4); });
+    ctx.fillStyle = "yellow"; bullets.forEach(b => ctx.fillRect(b.x, b.y, 5, 5));
+    ctx.restore();
+}
+
+function loop() { update(); draw(); requestAnimationFrame(loop); }
+loop();
+</script>
+</body>
+</html>
